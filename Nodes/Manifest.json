@@ -1,0 +1,28 @@
+﻿{
+  "PackageFormatVersion": "1.0",
+  "Assembly": "teclab_at.logic.dll",
+  "DependentFiles": [
+    "LogicModule.Nodes.Helpers.dll"
+  ],
+  "Version": "1.0.26",
+  "Author": "Thomas Perschak", 
+  "Copyright": "TecLab.at",
+  "DeveloperId": "teclab_at",
+  "Licence": "GPL-3.0",
+  "PackageId": "F3F7F417-B96E-4A08-942C-047DA6BA1F30",
+  "Nodes": [
+    {
+      "Type": "teclab_at.logic.TempController",
+      "Name": {
+        "en": "TecLab: Temperature Controller"
+      },
+      "IsConverter": false,
+      "Category": "Node",
+      "DefaultIcon": "icons/GenericLogicNode.png",
+      "HelpTooltip": {
+        "en": "Basic logic node that sets the output to the same value as the input."
+      },
+      "HelpFileReference": null
+    }
+  ]
+}

@@ -4,7 +4,7 @@
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.0.26",
+  "Version": "1.0.53",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",
@@ -20,7 +20,20 @@
       "Category": "Node",
       "DefaultIcon": "icons/GenericLogicNode.png",
       "HelpTooltip": {
-        "en": "Basic logic node that sets the output to the same value as the input."
+        "en": "Persistenly stores the set temperature and opens/closes the valve depending on the current temperature."
+      },
+      "HelpFileReference": null
+    },
+    {
+      "Type": "teclab_at.logic.SendMail",
+      "Name": {
+        "en": "TecLab: Send Mail"
+      },
+      "IsConverter": false,
+      "Category": "Node",
+      "DefaultIcon": "icons/GenericLogicNode.png",
+      "HelpTooltip": {
+        "en": "Sends an SMTP e-mail. Retries will repeat the sending in case of error with one minute pause in between."
       },
       "HelpFileReference": null
     }

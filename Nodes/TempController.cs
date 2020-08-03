@@ -4,14 +4,11 @@ using LogicModule.ObjectModel.TypeSystem;
 using System;
 using System.Globalization;
 
-namespace teclab_at.logic
-{
+namespace teclab_at.logic {
     public class TempController : LogicNodeBase
     {
         private readonly IPersistenceService persistenceService;
-        public TempController(INodeContext context)
-        : base(context)
-        {
+        public TempController(INodeContext context) : base(context) {
             // check
             context.ThrowIfNull("context");
 
@@ -22,9 +19,9 @@ namespace teclab_at.logic
             var typeService = context.GetService<ITypeService>();
             this.SetTemp = typeService.CreateDouble(PortTypes.Number, "SetTemp");
             this.CurTemp = typeService.CreateDouble(PortTypes.Number, "CurTemp");
-            this.Cooling = typeService.CreateBool(PortTypes.Binary, "Cooling");
-            this.Heating = typeService.CreateBool(PortTypes.Binary, "Heating");
-            this.Manual = typeService.CreateBool(PortTypes.Binary, "Manual");
+            this.Cooling = typeService.CreateBool(PortTypes.Binary, "Cooling", false);
+            this.Heating = typeService.CreateBool(PortTypes.Binary, "Heating", false);
+            this.Manual = typeService.CreateBool(PortTypes.Binary, "Manual", false);
             // Initialize the output ports
             this.Valve = typeService.CreateBool(PortTypes.Binary, "Valve");
             this.StoTemp = typeService.CreateDouble(PortTypes.Number, "StoTemp");
@@ -36,13 +33,13 @@ namespace teclab_at.logic
         [Input(DisplayOrder = 2, IsRequired = true)] 
         public DoubleValueObject CurTemp { get; private set; }
         
-        [Input(DisplayOrder = 3, IsRequired = true)]
+        [Input(DisplayOrder = 3, IsRequired = false)]
         public BoolValueObject Cooling { get; private set; }
 
-        [Input(DisplayOrder = 4, IsRequired = true)] 
+        [Input(DisplayOrder = 4, IsRequired = false)] 
         public BoolValueObject Heating { get; private set; }
 
-        [Input(DisplayOrder = 5, IsRequired = true)]
+        [Input(DisplayOrder = 5, IsRequired = false)]
         public BoolValueObject Manual { get; private set; }
 
         [Output(DisplayOrder = 1)]
@@ -56,49 +53,32 @@ namespace teclab_at.logic
         /// The inputs that were updated for this function to be called, have <see cref="IValueObject.WasSet"/> set to true. After this function returns 
         /// the <see cref="IValueObject.WasSet"/> flag will be reset to false.
         /// </summary>
-        public override void Execute()
-        {
+        public override void Execute() {
             // only update the current set temperatur if the value changed by 0.1 degree
             // that is to avoid infinite loops
-            if (!this.StoTemp.HasValue || (this.SetTemp.WasSet && (Math.Abs(this.SetTemp.Value - this.StoTemp.Value) >= 0.1)))
-            {
+            if (!this.StoTemp.HasValue || (this.SetTemp.WasSet && (Math.Abs(this.SetTemp.Value - this.StoTemp.Value) >= 0.1))) {
                 this.StoTemp.Value = this.SetTemp.Value;
                 this.persistenceService.SetValue(this, "StoTemp", this.StoTemp.Value.ToString());
             }
-
+            
             // now control the valve
-            if (this.Manual.Value)
-            {
+            if (this.Manual.Value) {
                 this.Valve.Value = true;
-            }
-            else if (this.Cooling.Value && this.Heating.Value)
-            {
+            } else if (this.Cooling.Value && this.Heating.Value) {
                 this.Valve.Value = false;
-            }
-            else if (this.Cooling.Value)
-            {
-                if (this.CurTemp.Value > this.SetTemp.Value)
-                {
+            } else if (this.Cooling.Value) {
+                if (this.CurTemp.Value > this.SetTemp.Value) {
                     this.Valve.Value = true;
-                }
-                else
-                {
+                } else {
                     this.Valve.Value = false;
                 }
-            }
-            else if (this.Heating.Value)
-            {
-                if (this.CurTemp.Value < this.SetTemp.Value)
-                {
+            } else if (this.Heating.Value) {
+                if (this.CurTemp.Value < this.SetTemp.Value) {
                     this.Valve.Value = true;
-                }
-                else
-                {
+                } else {
                     this.Valve.Value = false;
                 }
-            }
-            else
-            {
+            } else {
                 this.Valve.Value = false;
             }
         }
@@ -107,8 +87,7 @@ namespace teclab_at.logic
         /// This function is called only once when the logic page is being loaded.
         /// The base function of this is empty. 
         /// </summary>
-        public override void Startup()
-        {
+        public override void Startup() {
             // call base
             base.Startup();
 
@@ -117,16 +96,18 @@ namespace teclab_at.logic
             if (string.IsNullOrEmpty(savedValue)) return;
             
             // try to convert to double
-            try
-            {
+            try {
                 this.StoTemp.Value = Convert.ToDouble(savedValue, CultureInfo.CurrentCulture);
             }
-            catch
-            {
+            catch {
                 //this.StoTemp.Value = 20;
                 return;
             }
             this.SetTemp.Value = this.StoTemp.Value;
+        }
+        
+        public override ValidationResult Validate(string language) {
+            return base.Validate(language);
         }
 
         /// <summary>
@@ -136,8 +117,7 @@ namespace teclab_at.logic
         /// <param name="language">The requested language, for example "en" or "de".</param>
         /// <param name="key">The key to translate.</param>
         /// <returns>The translation of <paramref name="key"/> in the requested language, or <paramref name="key"/> if the translation is missing.</returns>
-        public override string Localize(string language, string key)
-        {
+        public override string Localize(string language, string key) {
             return base.Localize(language, key);
         }
     }

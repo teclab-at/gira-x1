@@ -4,7 +4,7 @@
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.0.53",
+  "Version": "1.0.82",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",
@@ -33,7 +33,7 @@
       "Category": "Node",
       "DefaultIcon": "icons/GenericLogicNode.png",
       "HelpTooltip": {
-        "en": "Sends an SMTP e-mail. Retries will repeat the sending in case of error with one minute pause in between."
+        "en": "Sends an SMTP e-mail. Retries will repeat the sending in case of error with one minute pause in between. Encryption is STARTTLS."
       },
       "HelpFileReference": null
     }

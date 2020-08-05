@@ -8,6 +8,7 @@ namespace teclab_at.logic {
     public class TempController : LogicNodeBase
     {
         private readonly IPersistenceService persistenceService;
+
         public TempController(INodeContext context) : base(context) {
             // check
             context.ThrowIfNull("context");
@@ -105,10 +106,6 @@ namespace teclab_at.logic {
             }
             this.SetTemp.Value = this.StoTemp.Value;
         }
-        
-        public override ValidationResult Validate(string language) {
-            return base.Validate(language);
-        }
 
         /// <summary>
         /// By default this function gets the translation for the node's in- and output from the <see cref="LogicNodeBase.ResourceManager"/>.
@@ -117,8 +114,8 @@ namespace teclab_at.logic {
         /// <param name="language">The requested language, for example "en" or "de".</param>
         /// <param name="key">The key to translate.</param>
         /// <returns>The translation of <paramref name="key"/> in the requested language, or <paramref name="key"/> if the translation is missing.</returns>
-        public override string Localize(string language, string key) {
+        /*public override string Localize(string language, string key) {
             return base.Localize(language, key);
-        }
+        }*/
     }
 }

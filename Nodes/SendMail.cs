@@ -21,7 +21,7 @@ namespace teclab_at.logic {
 
             // Initialize the input ports
             ITypeService typeService = context.GetService<ITypeService>();
-            this.SendTrigger = typeService.CreateBool(PortTypes.Bool, "Trigger");
+            this.Trigger = typeService.CreateBool(PortTypes.Bool, "Trigger");
             this.MailTo = typeService.CreateString(PortTypes.String, "To");
             this.MailFrom = typeService.CreateString(PortTypes.String, "From");
             this.MailFromAlias = typeService.CreateString(PortTypes.String, "From Alias");
@@ -43,7 +43,7 @@ namespace teclab_at.logic {
 
         // Logic block definition
         [Input(DisplayOrder = 1, IsInput = true, IsRequired = true)]
-        public BoolValueObject SendTrigger { get; private set; }
+        public BoolValueObject Trigger { get; private set; }
 
         [Parameter(DisplayOrder = 2, InitOrder = 1, IsDefaultShown = false)]
         public StringValueObject MailTo { get; private set; }
@@ -105,7 +105,7 @@ namespace teclab_at.logic {
 
         public override void Execute() {
             // React only on Trigger input
-            if (!this.SendTrigger.Value || !this.SendTrigger.WasSet) return;
+            if (!this.Trigger.Value || !this.Trigger.WasSet) return;
             this.Log("Execute: " + this.MailSubject.Value);
 
             // Configure a new smtp client instance which handles the connection details

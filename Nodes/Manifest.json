@@ -4,7 +4,7 @@
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.1.1",
+  "Version": "1.1.14",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",
@@ -34,6 +34,19 @@
       "DefaultIcon": "icons/GenericLogicNode.png",
       "HelpTooltip": {
         "en": "Sends an SMTP e-mail. Retries will repeat the sending in case of error with one minute pause in between. Encryption is STARTTLS."
+      },
+      "HelpFileReference": null
+    },
+    {
+      "Type": "teclab_at.logic.HusqAutomower",
+      "Name": {
+        "en": "TecLab: Husqvarner Automower"
+      },
+      "IsConverter": false,
+      "Category": "Node",
+      "DefaultIcon": "icons/GenericLogicNode.png",
+      "HelpTooltip": {
+        "en": "Control and status of Husqvarner Automower."
       },
       "HelpFileReference": null
     }

@@ -1,10 +1,13 @@
 ﻿{
   "PackageFormatVersion": "1.0",
-  "Assembly": "teclab_at.logic.dll",
+  "Assembly": "teclab_at.logic.collection.dll",
+  "PackageName": {
+    "en": "TecLab X1 Nodes"
+  },
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.1.64",
+  "Version": "1.1.87",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",
@@ -12,7 +15,7 @@
   "PackageId": "F3F7F417-B96E-4A08-942C-047DA6BA1F30",
   "Nodes": [
     {
-      "Type": "teclab_at.logic.TempController",
+      "Type": "teclab_at.logic.collection.TempController",
       "Name": {
         "en": "TecLab: Temperature Controller"
       },
@@ -25,7 +28,7 @@
       "HelpFileReference": null
     },
     {
-      "Type": "teclab_at.logic.SendMail",
+      "Type": "teclab_at.logic.collection.SendMail",
       "Name": {
         "en": "TecLab: Send Mail"
       },
@@ -38,7 +41,7 @@
       "HelpFileReference": null
     },
     {
-      "Type": "teclab_at.logic.HusqAutomower",
+      "Type": "teclab_at.logic.collection.HusqAutomower",
       "Name": {
         "en": "TecLab: Husqvarner Automower"
       },

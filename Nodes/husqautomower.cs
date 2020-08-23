@@ -2,25 +2,17 @@
 using LogicModule.ObjectModel;
 using LogicModule.ObjectModel.TypeSystem;
 using System;
-using System.Web;
 using System.Net;
 using System.Net.Security;
-using System.Collections.Specialized;
+using System.Web.Script.Serialization;
+using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
-//using System.Collections.Generic;
-//using System.Net.Http;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
-using System.Text;
-using Newtonsoft.Json;
-using System.Linq;
-//using Newtonsoft.Json.Linq;
-//using System.Runtime.CompilerServices;
-//using System.ComponentModel;
-//using System.Text.Json;
 
-namespace teclab_at.logic {
+namespace teclab_at.logic.collection {
     public class HusqAutomower : LogicNodeBase {
         public HusqAutomower(INodeContext context) : base(context) {
             // check
@@ -35,42 +27,97 @@ namespace teclab_at.logic {
             this.AppId = typeService.CreateString(PortTypes.String, "App ID");
             this.AuthUser = typeService.CreateString(PortTypes.String, "Connect User");
             this.AuthPassword = typeService.CreateString(PortTypes.String, "Connect Password");
+            this.MowerName = typeService.CreateString(PortTypes.String, "Mower Name");
             this.DoLog = typeService.CreateBool(PortTypes.Bool, "Enable Logging", false);
             // Initialize the output ports
-            this.ErrorMessage = typeService.CreateString(PortTypes.String, "Status Message");
-            this.ErrorSignal = typeService.CreateBool(PortTypes.Bool, "Error Status");
+            this.BatteryCapacity = typeService.CreateByte(PortTypes.Byte, "Battery Capacity");
+            this.ActivityMowing = typeService.CreateBool(PortTypes.Bool, "Activity Mowing");
+            this.ActivityGoingHome = typeService.CreateBool(PortTypes.Bool, "Activity Going Home");
+            this.ActivityCharging = typeService.CreateBool(PortTypes.Bool, "Activity Charging");
+            this.ActivityLeavingCS = typeService.CreateBool(PortTypes.Bool, "Activity Leaving CS");
+            this.ActivityParkingCS = typeService.CreateBool(PortTypes.Bool, "Activity Parking CS");
+            this.ActivityStopped = typeService.CreateBool(PortTypes.Bool, "Activity Stopped");
+            this.StateOperational = typeService.CreateBool(PortTypes.Bool, "State Operational");
+            this.StatePaused = typeService.CreateBool(PortTypes.Bool, "State Paused");
+            this.StateRestricted = typeService.CreateBool(PortTypes.Bool, "State Restricted");
+            this.StateError = typeService.CreateBool(PortTypes.Bool, "State Error");
+            // Internals
+            this.LogicError = typeService.CreateBool(PortTypes.Bool, "Logic Error");
         }
 
         // Class internals
+        private Task statusTask = null;
         private Mutex mutex = new Mutex();
         private AuthCache authCache = null;
-        private const String logFile = "/var/log/teclab.at.husqautomower.log";
+        private String mowerId = "";
+        public static String logFile = "/var/log/teclab.at.husqautomower.log";
+        public static String authUrl = "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token"; // host 99.86.243.3 || host 99.86.243.107 || host 99.86.243.65
+        public static String mowersUrl = "https://api.amc.husqvarna.dev/v1/mowers";
 
         [Input(DisplayOrder = 1, IsInput = true, IsRequired = true)]
         public BoolValueObject Trigger { get; private set; }
 
-        [Parameter(DisplayOrder = 9, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
+        [Parameter(DisplayOrder = 2, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
         public StringValueObject AppId { get; private set; }
 
-        [Parameter(DisplayOrder = 9, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
+        [Parameter(DisplayOrder = 3, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
         public StringValueObject AuthUser { get; private set; }
 
-        [Parameter(DisplayOrder = 10, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
+        [Parameter(DisplayOrder = 4, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
         public StringValueObject AuthPassword { get; private set; }
 
-        [Input(DisplayOrder = 12, IsInput = true, IsRequired = false)]
+        [Parameter(DisplayOrder = 5, InitOrder = 1, IsDefaultShown = false, IsRequired = false)]
+        public StringValueObject MowerName { get; private set; }
+
+        [Input(DisplayOrder = 6, IsInput = true, IsRequired = false)]
         public BoolValueObject DoLog { get; private set; }
 
-        [Output(DisplayOrder = 1)]
-        public StringValueObject ErrorMessage { get; private set; }
-        
-        [Output(DisplayOrder = 2)]
-        public BoolValueObject ErrorSignal { get; private set; }
+        [Output(DisplayOrder = 1, IsRequired = false)]
+        public ByteValueObject BatteryCapacity { get; private set; }
 
-        public void Log(String message) {
-            if ((Environment.OSVersion.Platform != PlatformID.Unix) || !this.DoLog.Value) return;
+        [Output(DisplayOrder = 2, IsRequired = false)]
+        public BoolValueObject ActivityMowing { get; private set; }
+
+        [Output(DisplayOrder = 3)]
+        public BoolValueObject ActivityGoingHome { get; private set; }
+
+        [Output(DisplayOrder = 4)]
+        public BoolValueObject ActivityCharging { get; private set; }
+
+        [Output(DisplayOrder = 5)]
+        public BoolValueObject ActivityLeavingCS { get; private set; }
+
+        [Output(DisplayOrder = 6)]
+        public BoolValueObject ActivityParkingCS { get; private set; }
+
+        [Output(DisplayOrder = 7)]
+        public BoolValueObject ActivityStopped { get; private set; }
+
+        [Output(DisplayOrder = 8)]
+        public BoolValueObject StateOperational { get; private set; }
+
+        [Output(DisplayOrder = 9)]
+        public BoolValueObject StatePaused { get; private set; }
+
+        [Output(DisplayOrder = 10)]
+        public BoolValueObject StateRestricted { get; private set; }
+
+        [Output(DisplayOrder = 11)]
+        public BoolValueObject StateError { get; private set; }
+
+        [Output(DisplayOrder = 20)]
+        public BoolValueObject LogicError { get; private set; }
+
+        public void Log(String message, Boolean force = false) {
+            if ((Environment.OSVersion.Platform != PlatformID.Unix) || (!this.DoLog.Value && !force)) return;
             mutex.WaitOne();
-            File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
+            File.AppendAllText(HusqAutomower.logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
+            mutex.ReleaseMutex();
+        }
+
+        public void SignalLogicError(Boolean state = true) {
+            mutex.WaitOne();
+            if (this.LogicError.Value != state) { this.LogicError.Value = state; }
             mutex.ReleaseMutex();
         }
 
@@ -79,10 +126,21 @@ namespace teclab_at.logic {
             base.Startup();
             ServicePointManager.ServerCertificateValidationCallback =
                 delegate (object s, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) { return true; };
-            if ((Environment.OSVersion.Platform == PlatformID.Unix) && this.DoLog.Value) {
+            if (Environment.OSVersion.Platform == PlatformID.Unix) {
                 try {File.Delete(logFile);} catch (Exception) {}
                 this.Log("Husqvarner Automower logic page started");
             }
+            this.ActivityMowing.Value = false;
+            this.ActivityGoingHome.Value = false;
+            this.ActivityCharging.Value = false;
+            this.ActivityLeavingCS.Value = false;
+            this.ActivityParkingCS.Value = false;
+            this.ActivityStopped.Value = false;
+            this.StateOperational.Value = false;
+            this.StatePaused.Value = false;
+            this.StateRestricted.Value = false;
+            this.StateError.Value = false;
+            this.LogicError.Value = false;
         }
 
         public override void Execute() {
@@ -90,28 +148,10 @@ namespace teclab_at.logic {
             if (!this.Trigger.Value || !this.Trigger.WasSet) return;
 
             // Schedule as async task ...
-            try {
-                Task task = new Task(() => Authorize(this));
-                task.Start();
-            } catch (Exception ex) {
-                this.Log("Authorisation failed: " + ex.Message);
-                this.ReportError(ex.Message);
-            } finally {
-            }
-        }
-
-        public void ReportError(String message) {
-            mutex.WaitOne();
-            this.ErrorMessage.Value = message;
-            this.ErrorSignal.Value = true;
-            mutex.ReleaseMutex();
-        }
-        
-        public void ReportSuccess() {
-            mutex.WaitOne();
-            this.ErrorMessage.Value = "";
-            this.ErrorSignal.Value = false;
-            mutex.ReleaseMutex();
+            if ((statusTask == null) || (statusTask.Status != TaskStatus.Running)) {
+                this.SignalLogicError(false);
+                statusTask = Task.Run(() => UpdateStatus(this));
+            }            
         }
 
         private class AuthCache {
@@ -122,138 +162,249 @@ namespace teclab_at.logic {
             public String token_type { get; set; }
             public String scope { get; set; }
             public int expires_in { get; set; } = 0;
+            public DateTime time { get; set; }
         }
 
-        public void StoreAuth(String jsonStr) {
-            mutex.WaitOne();
-            if (this.authCache != null) {
-                this.authCache.refresh_token = null;
-                this.authCache.access_token = null;
+        static void UpdateStatus(HusqAutomower parent) {
+            // It might be the first call or other reasons for not having an access token
+            // Anyhow, start to authorize
+            if (!parent.AuthorizeCheck()) {
+                parent.Log("Failed authorization", true);
+                parent.SignalLogicError();
+                return;
             }
-            if (jsonStr != null) {
-                this.Log(jsonStr);
-                this.authCache = JsonConvert.DeserializeObject<AuthCache>(jsonStr);
+
+            // Sanity check
+            // Check availability of the access token
+            parent.mutex.WaitOne();
+            if ((parent.authCache.access_token == null) || (parent.authCache.access_token == "")) {
+                parent.mutex.ReleaseMutex();
+                parent.Log("Invalid access token", true);
+                parent.SignalLogicError();
+                return;
             }
-            mutex.ReleaseMutex();
+
+            // Create the request message that lists us all mowers with their ID
+            var reqMessage = new HttpRequestMessage(HttpMethod.Get, HusqAutomower.mowersUrl);
+            reqMessage.Headers.Add("authorization-provider", parent.authCache.provider);
+            reqMessage.Headers.Add("x-api-key", parent.AppId.Value);
+            reqMessage.Headers.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
+            parent.mutex.ReleaseMutex();
+
+            // Trace log
+            parent.Log(HusqAutomower.mowersUrl + ": " + reqMessage.ToString());
+
+            // Create the http request message and process it asynchronously
+            HttpClientHandler handler = new HttpClientHandler();
+            var client = new HttpClient(handler);
+            Task<HttpResponseMessage> reqTask = client.SendAsync(reqMessage);
+            reqTask.Wait(10000);
+            Task<String> respTask = reqTask.Result.Content.ReadAsStringAsync();
+            respTask.Wait(10000);
+
+            // Check response status
+            if (reqTask.Result.StatusCode != HttpStatusCode.OK) {
+                parent.Log(respTask.Result, true);
+                parent.SignalLogicError();
+                return;
+            }
+
+            var jss = new JavaScriptSerializer();
+            var mowersData = jss.Deserialize<Dictionary<string, dynamic>>(respTask.Result);
+            foreach (var data in mowersData["data"]) {
+                if (data["attributes"]["system"]["name"] == parent.MowerName.Value) {
+                    parent.mutex.WaitOne();
+                    parent.mowerId = data["id"];
+                    parent.mutex.ReleaseMutex();
+                    parent.BatteryCapacity.Value = (Byte)data["attributes"]["battery"]["batteryPercent"];
+                    switch (data["attributes"]["mower"]["activity"]) {
+                        case "MOWING":
+                            if (!parent.ActivityMowing.Value) { parent.ActivityMowing.Value = true; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                        case "GOING_HOME":
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = true; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                        case "CHARGING":
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.Value) { parent.ActivityCharging.Value = true; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                        case "LEAVING":
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = true; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                        case "PARKED_IN_CS":
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = true; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                        case "STOPPED_IN_GARDEN":
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.Value) { parent.ActivityStopped.Value = true; }
+                            break;
+                        default:
+                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            break;
+                    }
+                    switch (data["attributes"]["mower"]["state"]) {
+                        case "IN_OPERATION":
+                            if (!parent.StateOperational.Value) { parent.StateOperational.Value = true; }
+                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            break;
+                        case "PAUSED":
+                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (!parent.StatePaused.Value) { parent.StatePaused.Value = true; }
+                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            break;
+                        case "RESTRICTED":
+                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (!parent.StateRestricted.Value) { parent.StateRestricted.Value = true; }
+                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            break;
+                        case "ERROR":
+                        case "FATAL_ERROR":
+                        case "ERROR_AT_POWER_UP":
+                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (!parent.StateError.Value) { parent.StateError.Value = true; }
+                            break;
+                        default:
+                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            break;
+                    }
+                }
+                break;
+            }
         }
 
-        private string ToKeyValuePairs(NameValueCollection nvc) {
-            var array = (from key in nvc.AllKeys from value in nvc.GetValues(key) select string.Format("{0}={1}", key, value)).ToArray();
-            return string.Join("&", array);
-        }
+        private Boolean AuthorizeRequest(String url, Dictionary<String, String> payload) {
+            this.Log(url + ": " + payload.ToString());
 
-        private Boolean RequestData(String url, NameValueCollection payload) {
-            // Initialize the web-request
-            HttpWebRequest httpRequest = (HttpWebRequest)WebRequest.Create(url);
-            httpRequest.Method = "POST";
-            httpRequest.ContentType = "application/x-www-form-urlencoded; charset=utf-8";
+            // Create an URL encoded http content message with the provided payload
+            var reqContent = new FormUrlEncodedContent(payload);
+            HttpClientHandler handler = new HttpClientHandler();
+            var client = new HttpClient(handler);
 
-            // Create the http output stream and write our payload
-            var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
-            streamOut.Write(this.ToKeyValuePairs(payload));
-            streamOut.Close();
-            streamOut.Dispose();
+            // Send content and wait for result
+            Task<HttpResponseMessage> reqTask = client.PostAsync(url, reqContent);
+            reqTask.Wait(10000);
+            Task<String> respTask = reqTask.Result.Content.ReadAsStringAsync();
+            respTask.Wait(10000);
 
-            // Prepare the response
-            try {
-                HttpWebResponse httpResponse = (HttpWebResponse)httpRequest.GetResponse();
-                Stream streamIn = httpResponse.GetResponseStream();
-                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
-                String data = streamReader.ReadToEnd();
-                this.Log(data);
-                this.StoreAuth(data);
-                // Cleanup
-                streamReader.Close();
-                streamReader.Dispose();
-                streamIn.Close();
-                streamIn.Dispose();
-                httpResponse.Close();
+            // Check return status and store the authentication details
+            if (reqTask.Result.StatusCode == HttpStatusCode.OK) {
+                JavaScriptSerializer jss = new JavaScriptSerializer();
+                this.authCache = jss.Deserialize<AuthCache>(respTask.Result);
+                this.Log(respTask.Result);
+                this.authCache.time = DateTime.UtcNow;
                 return true;
-            } catch (WebException ex) {
-                HttpWebResponse httpResponse = (HttpWebResponse)ex.Response;
-                Stream streamIn = httpResponse.GetResponseStream();
-                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
-                String data = streamReader.ReadToEnd();
-                this.Log("Authentication failure: " + data);
-                this.StoreAuth(null);
-                // Cleanup
-                streamReader.Close();
-                streamReader.Dispose();
-                streamIn.Close();
-                streamIn.Dispose();
-                httpResponse.Close();
+            } else {
+                if (this.authCache != null) {
+                    this.authCache.refresh_token = null;
+                    this.authCache.access_token = null;
+                }
+                this.Log(respTask.Result);
                 return false;
             }
         }
 
-        // Note that the 'async' keyword ist not working on the X1 - the Task is simply not scheduled - unknown why ...
-        static Boolean Authorize(HusqAutomower parent) {
-            // host 99.86.243.3 || host 99.86.243.107 || host 99.86.243.65
-            const String authUrl = "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token";
-            var payload = new NameValueCollection();
+        private Boolean AuthorizeCheck() {
+            mutex.WaitOne();
+
+            // Re-authorize if authorization is about to expire
+            // We give it a 20 seconds margin
+            if ((this.authCache != null) && (this.authCache.access_token != null)) {
+                if (((DateTime.UtcNow.Ticks - this.authCache.time.Ticks) / TimeSpan.TicksPerSecond) < (this.authCache.expires_in - 20)) {
+                    mutex.ReleaseMutex();
+                    return true;
+                }
+            }
+
+            // Create the request payload as url encoded string
+            var payload = new Dictionary<String, String>();
+            payload.Add("client_id", this.AppId.Value);
 
             /* The first authorisation is the password grant.
              * If this fails, there must be something wrong in the app ID, user or password.
              * Nothing else we can do ... */
-            if ((parent.authCache == null) || (parent.authCache.access_token == null) || (parent.authCache.refresh_token == null)) {
+            if ((this.authCache == null) || (this.authCache.access_token == null) || (this.authCache.refresh_token == null)) {
+                this.Log("Performing password authorisation");
                 payload.Add("grant_type", "password");
-                payload.Add("client_id", parent.AppId.Value);
-                payload.Add("username", parent.AuthUser.Value);
-                payload.Add("password", parent.AuthPassword.Value);
-                if (parent.RequestData(authUrl, payload)) { return true; } else { return false; }
+                payload.Add("username", this.AuthUser.Value);
+                payload.Add("password", this.AuthPassword.Value);
+                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) { 
+                    mutex.ReleaseMutex();
+                    return true;
+                } else {
+                    mutex.ReleaseMutex();
+                    return false;
+                }
             }
 
             /* The second authorisation trys through the refresh token.
              * Though the refresh token might be invalid or timed out.
              * In that case we need to use password authentication again. */
-            if (parent.authCache.refresh_token != null) {
+            if (this.authCache.refresh_token != null) {
+                this.Log("Performing refresh-token authorisation");
                 payload.Add("grant_type", "refresh_token");
-                payload.Add("client_id", parent.AppId.Value);
-                payload.Add("refresh_token", parent.authCache.refresh_token);
-                if (parent.RequestData(authUrl, payload)) { return true; }
+                payload.Add("refresh_token", this.authCache.refresh_token);
+                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+                    mutex.ReleaseMutex();
+                    return true;
+                }
             }
 
             /* There was a refresh token but it got invalid for whatever reason.
              * Last resort is to try full password authentication.
              * If this fails, nothing else we can do ... */
+            this.Log("Performing password authorisation");
             payload.Add("grant_type", "password");
-            payload.Add("client_id", parent.AppId.Value);
-            payload.Add("username", parent.AuthUser.Value);
-            payload.Add("password", parent.AuthPassword.Value);
-            if (parent.RequestData(authUrl, payload)) { return true; } else { return false; }
+            payload.Add("username", this.AuthUser.Value);
+            payload.Add("password", this.AuthPassword.Value);
+            if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) { 
+                mutex.ReleaseMutex();
+                return true;
+            } else {
+                mutex.ReleaseMutex();
+                return false;
+            }
         }
-
-        /*static void Authorize_FW45(HusqAutomower parent, Dictionary<string, string> credentials) {
-            const String authUrl = "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token";
-            parent.Log("A");
-
-            var authRequest = new Dictionary<string, string>(credentials);
-            authRequest.Add("grant_type", "password");
-
-            // Create http client and content
-            var reqContent = new FormUrlEncodedContent(authRequest);
-            HttpClientHandler handler = new HttpClientHandler();
-            var client = new HttpClient(handler);
-            parent.Log("B");
-            // Send content and read response (which is JSON)
-            Task<HttpResponseMessage> httpTask = client.PostAsync(authUrl, reqContent);
-            parent.Log("httpTask status: " + httpTask.Status.ToString());
-            httpTask.Wait(10000);
-            parent.Log("httpTask status: " + httpTask.Status.ToString());
-            //HttpResponseMessage response = client.PostAsync(authUrl, reqContent);
-            HttpResponseMessage response = httpTask.Result;
-            parent.Log("response status: " + response.StatusCode.ToString());
-
-            Task<String> contentTask = response.Content.ReadAsStringAsync();
-            parent.Log("contentTask status: " + contentTask.Status.ToString());
-            contentTask.Wait(10000);
-            parent.Log("contentTask status: " + contentTask.Status.ToString());
-            //parent.Store(response.Content.ReadAsStringAsync(), true);
-            parent.Store(contentTask.Result, true);
-
-            // kept for reference
-            // var jsonObj = JObject.Parse(jsonString);
-            // parent.ReportError(jsonObj["access_token"].Value<string>());
-        }*/
     }
 }

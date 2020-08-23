@@ -10,7 +10,7 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
 
-namespace teclab_at.logic {
+namespace teclab_at.logic.collection {
     public class SendMail : LogicNodeBase {
         public SendMail(INodeContext context) : base(context) {
             // check
@@ -33,14 +33,13 @@ namespace teclab_at.logic {
             this.SmtpPassword = typeService.CreateString(PortTypes.String, "SMTP Password");
             this.SendRetries = typeService.CreateInt(PortTypes.Integer, "Nr. Retries", 10);
             this.DoLog = typeService.CreateBool(PortTypes.Bool, "Enable Logging", false);
-            // Initialize the output ports
-            this.ErrorMessage = typeService.CreateString(PortTypes.String, "Error Message");
-            this.ErrorSignal = typeService.CreateBool(PortTypes.Bool, "Error Signal");
+            // Internals
+            this.LogicError = typeService.CreateBool(PortTypes.Bool, "Logic Error");
         }
 
         // Class internals
-        private Mutex mutex;
-        private const String logFile = "/var/log/teclab.at.sendmail.log";
+        private Mutex mutex = new Mutex();
+        public static String logFile = "/var/log/teclab.at.sendmail.log";
 
         // Logic block definition
         [Input(DisplayOrder = 1, IsInput = true, IsRequired = true)]
@@ -79,16 +78,19 @@ namespace teclab_at.logic {
         [Input(DisplayOrder = 12, IsInput = true, IsRequired = false)]
         public BoolValueObject DoLog { get; private set; }
 
-        [Output(DisplayOrder = 1)]
-        public StringValueObject ErrorMessage { get; private set; }
-        
-        [Output(DisplayOrder = 2)]
-        public BoolValueObject ErrorSignal { get; private set; }
+        [Output(DisplayOrder = 20)]
+        public BoolValueObject LogicError { get; private set; }
 
-        public void Log(String message) {
-            if ((Environment.OSVersion.Platform != PlatformID.Unix) || !this.DoLog.Value) return;
+        public void Log(String message, Boolean force = false) {
+            if ((Environment.OSVersion.Platform != PlatformID.Unix) || (!this.DoLog.Value && !force)) return;
             mutex.WaitOne();
-            File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
+            File.AppendAllText(SendMail.logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
+            mutex.ReleaseMutex();
+        }
+
+        public void SignalLogicError(Boolean state = true) {
+            mutex.WaitOne();
+            if (this.LogicError.Value != state) { this.LogicError.Value = state; }
             mutex.ReleaseMutex();
         }
 
@@ -98,16 +100,16 @@ namespace teclab_at.logic {
             // this is needed to accept all SSL certificates (honestly I have no clue ...)
             ServicePointManager.ServerCertificateValidationCallback =
                 delegate (object s, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) {return true;};
-            if ((Environment.OSVersion.Platform == PlatformID.Unix) && this.DoLog.Value) {
-                try {File.Delete(logFile);} catch (Exception) {}
+            if (Environment.OSVersion.Platform == PlatformID.Unix) {
+                try {File.Delete(SendMail.logFile);} catch (Exception) {}
                 this.Log("SendMail logic page started");
             }
+            this.LogicError.Value = false;
         }
 
         public override void Execute() {
             // React only on Trigger input
             if (!this.Trigger.Value || !this.Trigger.WasSet) return;
-            this.Log("Execute: " + this.MailSubject.Value);
 
             // Configure a new smtp client instance which handles the connection details
             SmtpClient client = new SmtpClient(this.SmtpHost.Value, this.SmtpPort.Value);
@@ -125,30 +127,8 @@ namespace teclab_at.logic {
             message.SubjectEncoding = System.Text.Encoding.UTF8;
 
             // Schedule as async task ...
-            try {
-                Task task = new Task(() => SendMessage(this, client, message, this.SendRetries.Value));
-                task.Start();
-            } catch (Exception ex) {
-                this.Log("SendMessage failed: " + message.Subject + " -> " + ex.Message);
-                this.ReportError(ex.Message);
-            } finally {
-                client.Dispose();
-                message.Dispose();
-            }
-        }
-
-        public void ReportError(String message) {
-            mutex.WaitOne();
-            this.ErrorMessage.Value = message;
-            this.ErrorSignal.Value = true;
-            mutex.ReleaseMutex();
-        }
-        
-        public void ReportSuccess() {
-            mutex.WaitOne();
-            this.ErrorMessage.Value = "";
-            this.ErrorSignal.Value = false;
-            mutex.ReleaseMutex();
+            this.SignalLogicError(false);
+            Task.Run(() => SendMessage(this, client, message, this.SendRetries.Value));
         }
 
         static void SendMessage(SendMail parent, SmtpClient client, MailMessage message, int sendRetries) {
@@ -163,7 +143,6 @@ namespace teclab_at.logic {
                     break;
                 } catch (Exception ex) {
                     parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + message.Subject + " -> " + ex.Message);
-                    parent.ReportError(sendRetries.ToString() + ": " + ex.Message);
                     // Sleep for 50 seconds. Note that the client.Send timeout is set to 10 seconds which gives us a one minute cycle
                     Thread.Sleep(50000);
                 }
@@ -175,8 +154,7 @@ namespace teclab_at.logic {
             if (sendSuccess) {
                 client.Dispose();
                 message.Dispose();
-                parent.Log("SendMessage (try " + tryNr.ToString() + ") succeess");
-                parent.ReportSuccess();
+                parent.Log("SendMessage (try " + tryNr.ToString() + ") success");
                 return;
             }
 
@@ -184,11 +162,10 @@ namespace teclab_at.logic {
             try {
                 parent.Log("SendMessage (try " + tryNr.ToString() + "): " + message.Subject);
                 client.Send(message);
-                parent.Log("SendMessage (try " + tryNr.ToString() + ") succeess");
-                parent.ReportSuccess();
+                parent.Log("SendMessage (try " + tryNr.ToString() + ") success");
             } catch (Exception ex) {
-                parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + message.Subject + " -> " + ex.Message);
-                parent.ReportError(ex.Message);
+                parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + message.Subject + " -> " + ex.Message, true);
+                parent.SignalLogicError();
             } finally {
                 client.Dispose();
                 message.Dispose();

@@ -4,7 +4,7 @@ using LogicModule.ObjectModel.TypeSystem;
 using System;
 using System.Globalization;
 
-namespace teclab_at.logic {
+namespace teclab_at.logic.collection {
     public class TempController : LogicNodeBase
     {
         private readonly IPersistenceService persistenceService;

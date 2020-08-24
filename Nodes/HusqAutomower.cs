@@ -4,13 +4,14 @@ using LogicModule.ObjectModel.TypeSystem;
 using System;
 using System.Net;
 using System.Net.Security;
-using System.Web.Script.Serialization;
-using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Security.Cryptography.X509Certificates;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
+using System.Text;
+using System.Linq;
+using Newtonsoft.Json;
 
 namespace teclab_at.logic.collection {
     public class HusqAutomower : LogicNodeBase {
@@ -45,7 +46,7 @@ namespace teclab_at.logic.collection {
         // Class internals
         private Task statusTask = null;
         private Mutex mutex = new Mutex();
-        private AuthCache authCache = null;
+        private AuthCache authCache = new AuthCache();
         private String mowerId = "";
         public static String logFile = "/var/log/teclab.at.husqautomower.log";
         public static String authUrl = "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token"; // host 99.86.243.3 || host 99.86.243.107 || host 99.86.243.65
@@ -105,6 +106,11 @@ namespace teclab_at.logic.collection {
         [Output(DisplayOrder = 20)]
         public BoolValueObject LogicError { get; private set; }
 
+        private string ToKeyValuePairs(NameValueCollection nvc) {
+            var array = (from key in nvc.AllKeys from value in nvc.GetValues(key) select string.Format("{0}={1}", key, value)).ToArray();
+            return string.Join("&", array);
+        }
+
         public void Log(String message, Boolean force = false) {
             if ((Environment.OSVersion.Platform != PlatformID.Unix) || (!this.DoLog.Value && !force)) return;
             this.mutex.WaitOne();
@@ -160,14 +166,13 @@ namespace teclab_at.logic.collection {
             public String token_type { get; set; }
             public String scope { get; set; }
             public int expires_in { get; set; } = 0;
-            public DateTime time { get; set; }
+            public DateTime time { get; set; } = DateTime.MinValue;
         }
 
         static void UpdateStatus(HusqAutomower parent) {
             // It might be the first call or other reasons for not having an access token
             // Anyhow, start to authorize
             if (!parent.AuthorizeCheck()) {
-                parent.Log("Failed authorization", true);
                 parent.SignalLogicError();
                 return;
             }
@@ -177,13 +182,60 @@ namespace teclab_at.logic.collection {
             parent.mutex.WaitOne();
             if ((parent.authCache.access_token == null) || (parent.authCache.access_token == "")) {
                 parent.mutex.ReleaseMutex();
-                parent.Log("Invalid access token", true);
+                parent.Log("Internal error: access token cannot be null or empty", true);
                 parent.SignalLogicError();
                 return;
             }
 
+            // Create the HTTP request using the GET method and the required content
+            var payload = new NameValueCollection();
+            payload.Add("authorization-provider", parent.authCache.provider);
+            payload.Add("x-api-key", parent.AppId.Value);
+            payload.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
+            HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.authUrl);
+            httpRequest.Method = "GET";
+            httpRequest.ContentType = "";
+            httpRequest.Headers.Add(payload);
+            parent.mutex.ReleaseMutex();
+
+            // Now write our request into the world ...
+            /*var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
+            streamOut.Write(String.Empty);
+            streamOut.Close();*/
+
+            // Prepare for the response
+            try {
+                HttpWebResponse httpResponse = (HttpWebResponse)httpRequest.GetResponse();
+                Stream streamIn = httpResponse.GetResponseStream();
+                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
+                String data = streamReader.ReadToEnd();
+                parent.Log(data);
+                // Fill the authentication cache
+                //this.authCache = JsonConvert.DeserializeObject<AuthCache>(data);
+                //this.authCache.time = DateTime.UtcNow;
+                // Cleanup
+                streamReader.Close();
+                streamIn.Close();
+                httpResponse.Close();
+            } catch (WebException ex) {
+                HttpWebResponse httpResponse = (HttpWebResponse)ex.Response;
+                Stream streamIn = httpResponse.GetResponseStream();
+                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
+                String data = streamReader.ReadToEnd();
+                parent.Log(data);
+                parent.SignalLogicError();
+                // Clear the authentication cache
+                //this.authCache.refresh_token = null;
+                //this.authCache.access_token = null;
+                //this.authCache.time = DateTime.MinValue;
+                // Cleanup
+                streamReader.Close();
+                streamIn.Close();
+                httpResponse.Close();
+            }
+
             // Create the request message that lists us all mowers with their ID
-            var reqMessage = new HttpRequestMessage(HttpMethod.Get, HusqAutomower.mowersUrl);
+            /*var reqMessage = new HttpRequestMessage(HttpMethod.Get, HusqAutomower.mowersUrl);
             reqMessage.Headers.Add("authorization-provider", parent.authCache.provider);
             reqMessage.Headers.Add("x-api-key", parent.AppId.Value);
             reqMessage.Headers.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
@@ -192,6 +244,7 @@ namespace teclab_at.logic.collection {
             // Trace log
             parent.Log(HusqAutomower.mowersUrl + ": " + reqMessage.ToString());
 
+            
             // Create the http request message and process it asynchronously
             HttpClientHandler handler = new HttpClientHandler();
             var client = new HttpClient(handler);
@@ -309,34 +362,53 @@ namespace teclab_at.logic.collection {
                     }
                 }
                 break;
-            }
+            }*/
         }
 
-        private Boolean AuthorizeRequest(String url, Dictionary<String, String> payload) {
-            // Create an URL encoded http content message with the provided payload
-            var reqContent = new FormUrlEncodedContent(payload);
-            HttpClientHandler handler = new HttpClientHandler();
-            var client = new HttpClient(handler);
+        private Boolean AuthorizeRequest(NameValueCollection payload) {
+            // Create the HTTP data from our payload and then log
+            String httpData = this.ToKeyValuePairs(payload);
+            this.Log(HusqAutomower.authUrl + "?" + httpData);
 
-            // Send content and wait for result
-            Task<HttpResponseMessage> reqTask = client.PostAsync(url, reqContent);
-            reqTask.Wait(10000);
-            Task<String> respTask = reqTask.Result.Content.ReadAsStringAsync();
-            respTask.Wait(10000);
+            // Create the HTTP request using the POST method and the required content
+            HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.authUrl);
+            httpRequest.Method = "POST";
+            httpRequest.ContentType = "application/x-www-form-urlencoded; charset=utf-8";
 
-            // Check return status and store the authentication details
-            if (reqTask.Result.StatusCode == HttpStatusCode.OK) {
-                JavaScriptSerializer jss = new JavaScriptSerializer();
-                this.authCache = jss.Deserialize<AuthCache>(respTask.Result);
-                this.Log(respTask.Result);
+            // Now write our request into the world ...
+            var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
+            streamOut.Write(httpData);
+            streamOut.Close();
+
+            // Prepare for the response
+            try {
+                HttpWebResponse httpResponse = (HttpWebResponse)httpRequest.GetResponse();
+                Stream streamIn = httpResponse.GetResponseStream();
+                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
+                String data = streamReader.ReadToEnd();
+                this.Log(data);
+                // Fill the authentication cache
+                this.authCache = JsonConvert.DeserializeObject<AuthCache>(data);
                 this.authCache.time = DateTime.UtcNow;
+                // Cleanup
+                streamReader.Close();
+                streamIn.Close();
+                httpResponse.Close();
                 return true;
-            } else {
-                if (this.authCache != null) {
-                    this.authCache.refresh_token = null;
-                    this.authCache.access_token = null;
-                }
-                this.Log(respTask.Result);
+            } catch (WebException ex) {
+                HttpWebResponse httpResponse = (HttpWebResponse)ex.Response;
+                Stream streamIn = httpResponse.GetResponseStream();
+                var streamReader = new StreamReader(streamIn, Encoding.UTF8);
+                String data = streamReader.ReadToEnd();
+                this.Log(data);
+                // Clear the authentication cache
+                this.authCache.refresh_token = null;
+                this.authCache.access_token = null;
+                this.authCache.time = DateTime.MinValue;
+                // Cleanup
+                streamReader.Close();
+                streamIn.Close();
+                httpResponse.Close();
                 return false;
             }
         }
@@ -346,29 +418,29 @@ namespace teclab_at.logic.collection {
 
             // Re-authorize if authorization is about to expire
             // We give it a 20 seconds margin
-            if ((this.authCache != null) && (this.authCache.access_token != null)) {
-                if (((DateTime.UtcNow.Ticks - this.authCache.time.Ticks) / TimeSpan.TicksPerSecond) < (this.authCache.expires_in - 20)) {
-                    this.mutex.ReleaseMutex();
-                    return true;
-                }
+            if (((DateTime.UtcNow.Ticks - this.authCache.time.Ticks) / TimeSpan.TicksPerSecond) < (this.authCache.expires_in - 20)) {
+                this.mutex.ReleaseMutex();
+                return true;
             }
 
             // Create the request payload as url encoded string
-            var payload = new Dictionary<String, String>();
+            var payload = new NameValueCollection();
             payload.Add("client_id", this.AppId.Value);
 
             /* The first authorisation is the password grant.
              * If this fails, there must be something wrong in the app ID, user or password.
              * Nothing else we can do ... */
-            if ((this.authCache == null) || (this.authCache.access_token == null) || (this.authCache.refresh_token == null)) {
-                this.Log("Performing password authorisation");
+            if ((this.authCache.access_token == null) || (this.authCache.refresh_token == null)) {
+                this.Log("Performing password authorisation ...");
                 payload.Add("grant_type", "password");
                 payload.Add("username", this.AuthUser.Value);
                 payload.Add("password", this.AuthPassword.Value);
-                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+                if (this.AuthorizeRequest(payload)) {
+                    this.Log("... success");
                     this.mutex.ReleaseMutex();
                     return true;
                 } else {
+                    this.Log("... failed");
                     this.mutex.ReleaseMutex();
                     return false;
                 }
@@ -378,26 +450,31 @@ namespace teclab_at.logic.collection {
              * Though the refresh token might be invalid or timed out.
              * In that case we need to use password authentication again. */
             if (this.authCache.refresh_token != null) {
-                this.Log("Performing refresh-token authorisation");
+                this.Log("Performing refresh-token authorisation ...");
                 payload.Add("grant_type", "refresh_token");
                 payload.Add("refresh_token", this.authCache.refresh_token);
-                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+                if (this.AuthorizeRequest(payload)) {
+                    this.Log("... success");
                     this.mutex.ReleaseMutex();
                     return true;
+                } else {
+                    this.Log("... failed");
                 }
             }
 
             /* There was a refresh token but it got invalid for whatever reason.
              * Last resort is to try full password authentication.
              * If this fails, nothing else we can do ... */
-            this.Log("Performing password authorisation");
+            this.Log("Performing password authorisation ...");
             payload.Add("grant_type", "password");
             payload.Add("username", this.AuthUser.Value);
             payload.Add("password", this.AuthPassword.Value);
-            if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+            if (this.AuthorizeRequest(payload)) {
+                this.Log("... success");
                 this.mutex.ReleaseMutex();
                 return true;
             } else {
+                this.Log("... failed");
                 this.mutex.ReleaseMutex();
                 return false;
             }

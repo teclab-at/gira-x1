@@ -5,11 +5,9 @@
     "en": "TecLab X1 Nodes"
   },
   "DependentFiles": [
-    "LogicModule.Nodes.Helpers.dll",
-    "System.Net.Http.dll",
-    "System.Web.Extensions.dll"
+    "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.1.117",
+  "Version": "1.1.135",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",

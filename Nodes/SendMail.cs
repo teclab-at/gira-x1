@@ -16,9 +16,6 @@ namespace teclab_at.logic.collection {
             // check
             context.ThrowIfNull("context");
 
-            // Because of multiple parallel access to resources we need mutex
-            this.mutex = new Mutex();
-
             // Initialize the input ports
             ITypeService typeService = context.GetService<ITypeService>();
             this.Trigger = typeService.CreateBool(PortTypes.Bool, "Trigger");
@@ -83,15 +80,15 @@ namespace teclab_at.logic.collection {
 
         public void Log(String message, Boolean force = false) {
             if ((Environment.OSVersion.Platform != PlatformID.Unix) || (!this.DoLog.Value && !force)) return;
-            mutex.WaitOne();
+            this.mutex.WaitOne();
             File.AppendAllText(SendMail.logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
-            mutex.ReleaseMutex();
+            this.mutex.ReleaseMutex();
         }
 
         public void SignalLogicError(Boolean state = true) {
-            mutex.WaitOne();
+            this.mutex.WaitOne();
             if (this.LogicError.Value != state) { this.LogicError.Value = state; }
-            mutex.ReleaseMutex();
+            this.mutex.ReleaseMutex();
         }
 
         public override void Startup() {
@@ -128,7 +125,8 @@ namespace teclab_at.logic.collection {
 
             // Schedule as async task ...
             this.SignalLogicError(false);
-            Task.Run(() => SendMessage(this, client, message, this.SendRetries.Value));
+            Task task = new Task(() => SendMessage(this, client, message, this.SendRetries.Value));
+            task.Start();
         }
 
         static void SendMessage(SendMail parent, SmtpClient client, MailMessage message, int sendRetries) {

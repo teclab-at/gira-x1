@@ -18,9 +18,6 @@ namespace teclab_at.logic.collection {
             // check
             context.ThrowIfNull("context");
 
-            // Because of multiple parallel access to resources we need mutex
-            this.mutex = new Mutex();
-
             // Initialize the input ports
             ITypeService typeService = context.GetService<ITypeService>();
             this.Trigger = typeService.CreateBool(PortTypes.Bool, "Trigger");
@@ -110,15 +107,15 @@ namespace teclab_at.logic.collection {
 
         public void Log(String message, Boolean force = false) {
             if ((Environment.OSVersion.Platform != PlatformID.Unix) || (!this.DoLog.Value && !force)) return;
-            mutex.WaitOne();
+            this.mutex.WaitOne();
             File.AppendAllText(HusqAutomower.logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + ": " + message + Environment.NewLine);
-            mutex.ReleaseMutex();
+            this.mutex.ReleaseMutex();
         }
 
         public void SignalLogicError(Boolean state = true) {
-            mutex.WaitOne();
+            this.mutex.WaitOne();
             if (this.LogicError.Value != state) { this.LogicError.Value = state; }
-            mutex.ReleaseMutex();
+            this.mutex.ReleaseMutex();
         }
 
         public override void Startup() {
@@ -148,10 +145,11 @@ namespace teclab_at.logic.collection {
             if (!this.Trigger.Value || !this.Trigger.WasSet) return;
 
             // Schedule as async task ...
-            if ((statusTask == null) || (statusTask.Status != TaskStatus.Running)) {
+            if ((this.statusTask == null) || ((this.statusTask.Status != TaskStatus.Running) && (this.statusTask.Status != TaskStatus.WaitingToRun))) {
                 this.SignalLogicError(false);
-                statusTask = Task.Run(() => UpdateStatus(this));
-            }            
+                this.statusTask = new Task(() => UpdateStatus(this));
+                this.statusTask.Start();
+            }
         }
 
         private class AuthCache {
@@ -173,7 +171,7 @@ namespace teclab_at.logic.collection {
                 parent.SignalLogicError();
                 return;
             }
-
+                        
             // Sanity check
             // Check availability of the access token
             parent.mutex.WaitOne();
@@ -315,8 +313,6 @@ namespace teclab_at.logic.collection {
         }
 
         private Boolean AuthorizeRequest(String url, Dictionary<String, String> payload) {
-            this.Log(url + ": " + payload.ToString());
-
             // Create an URL encoded http content message with the provided payload
             var reqContent = new FormUrlEncodedContent(payload);
             HttpClientHandler handler = new HttpClientHandler();
@@ -346,13 +342,13 @@ namespace teclab_at.logic.collection {
         }
 
         private Boolean AuthorizeCheck() {
-            mutex.WaitOne();
+            this.mutex.WaitOne();
 
             // Re-authorize if authorization is about to expire
             // We give it a 20 seconds margin
             if ((this.authCache != null) && (this.authCache.access_token != null)) {
                 if (((DateTime.UtcNow.Ticks - this.authCache.time.Ticks) / TimeSpan.TicksPerSecond) < (this.authCache.expires_in - 20)) {
-                    mutex.ReleaseMutex();
+                    this.mutex.ReleaseMutex();
                     return true;
                 }
             }
@@ -369,11 +365,11 @@ namespace teclab_at.logic.collection {
                 payload.Add("grant_type", "password");
                 payload.Add("username", this.AuthUser.Value);
                 payload.Add("password", this.AuthPassword.Value);
-                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) { 
-                    mutex.ReleaseMutex();
+                if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+                    this.mutex.ReleaseMutex();
                     return true;
                 } else {
-                    mutex.ReleaseMutex();
+                    this.mutex.ReleaseMutex();
                     return false;
                 }
             }
@@ -386,7 +382,7 @@ namespace teclab_at.logic.collection {
                 payload.Add("grant_type", "refresh_token");
                 payload.Add("refresh_token", this.authCache.refresh_token);
                 if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
-                    mutex.ReleaseMutex();
+                    this.mutex.ReleaseMutex();
                     return true;
                 }
             }
@@ -398,11 +394,11 @@ namespace teclab_at.logic.collection {
             payload.Add("grant_type", "password");
             payload.Add("username", this.AuthUser.Value);
             payload.Add("password", this.AuthPassword.Value);
-            if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) { 
-                mutex.ReleaseMutex();
+            if (this.AuthorizeRequest(HusqAutomower.authUrl, payload)) {
+                this.mutex.ReleaseMutex();
                 return true;
             } else {
-                mutex.ReleaseMutex();
+                this.mutex.ReleaseMutex();
                 return false;
             }
         }

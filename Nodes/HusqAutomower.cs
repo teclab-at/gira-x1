@@ -5,6 +5,7 @@ using System;
 using System.Net;
 using System.Net.Security;
 using System.Collections.Specialized;
+using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,7 +48,8 @@ namespace teclab_at.logic.collection {
         private Task statusTask = null;
         private Mutex mutex = new Mutex();
         private AuthCache authCache = new AuthCache();
-        private String mowerId = "";
+        private MowersCache mowersCache = new MowersCache();
+        private String mowerId = String.Empty;
         public static String logFile = "/var/log/teclab.at.husqautomower.log";
         public static String authUrl = "https://api.authentication.husqvarnagroup.dev/v1/oauth2/token"; // host 99.86.243.3 || host 99.86.243.107 || host 99.86.243.65
         public static String mowersUrl = "https://api.amc.husqvarna.dev/v1/mowers";
@@ -120,7 +122,7 @@ namespace teclab_at.logic.collection {
 
         public void SignalLogicError(Boolean state = true) {
             this.mutex.WaitOne();
-            if (this.LogicError.Value != state) { this.LogicError.Value = state; }
+            if (!this.LogicError.HasValue || (this.LogicError.Value != state)) { this.LogicError.Value = state; }
             this.mutex.ReleaseMutex();
         }
 
@@ -133,17 +135,6 @@ namespace teclab_at.logic.collection {
                 try {File.Delete(logFile);} catch (Exception) {}
                 this.Log("Husqvarner Automower logic page started");
             }
-            this.ActivityMowing.Value = false;
-            this.ActivityGoingHome.Value = false;
-            this.ActivityCharging.Value = false;
-            this.ActivityLeavingCS.Value = false;
-            this.ActivityParkingCS.Value = false;
-            this.ActivityStopped.Value = false;
-            this.StateOperational.Value = false;
-            this.StatePaused.Value = false;
-            this.StateRestricted.Value = false;
-            this.StateError.Value = false;
-            this.LogicError.Value = false;
         }
 
         public override void Execute() {
@@ -159,13 +150,49 @@ namespace teclab_at.logic.collection {
         }
 
         private class AuthCache {
-            public String access_token { get; set; } = null;
-            public String refresh_token { get; set; } = null;
-            public String provider { get; set; }
-            public String user_id { get; set; }
-            public String token_type { get; set; }
-            public String scope { get; set; }
+            public String access_token { get; set; } = String.Empty;
+            public String refresh_token { get; set; } = String.Empty;
+            public String provider { get; set; } = String.Empty;
+            public String user_id { get; set; } = String.Empty;
+            public String token_type { get; set; } = String.Empty;
+            public String scope { get; set; } = String.Empty;
             public int expires_in { get; set; } = 0;
+            public DateTime time { get; set; } = DateTime.MinValue;
+        }
+
+        public class MowerData {
+            public class AttributesData {
+                public class SystemData {
+                    public String name { get; set; } = String.Empty;
+                    public String model { get; set; } = String.Empty;
+                    public String serialNumber { get; set; } = String.Empty;
+                }
+                public class BatteryData {
+                    public int batteryPercent { get; set; } = 0;
+                }
+                public class MowerState {
+                    public String mode { get; set; } = String.Empty;
+                    public String activity { get; set; } = String.Empty;
+                    public String state { get; set; } = String.Empty;
+                    public int errorCode { get; set; } = 0;
+                    public long errorCodeTimestamp { get; set; } = 0;
+                }
+                public class MetaData {
+                    public Boolean connected { get; set; } = false;
+                    public long statusTimestamp { get; set; } = 0;
+                }
+                public SystemData system { get; set; }
+                public BatteryData battery { get; set; }
+                public MowerState mower { get; set; }
+                public MetaData metadata { get; set; }
+            }
+            public String type { get; set; } = String.Empty;
+            public String id { get; set; }
+            public AttributesData attributes { get; set; }
+        }
+
+        private class MowersCache {
+            public MowerData[] data { get; set; }
             public DateTime time { get; set; } = DateTime.MinValue;
         }
 
@@ -176,32 +203,23 @@ namespace teclab_at.logic.collection {
                 parent.SignalLogicError();
                 return;
             }
-                        
             // Sanity check
             // Check availability of the access token
             parent.mutex.WaitOne();
-            if ((parent.authCache.access_token == null) || (parent.authCache.access_token == "")) {
+            if (parent.authCache.access_token == String.Empty) {
                 parent.mutex.ReleaseMutex();
                 parent.Log("Internal error: access token cannot be null or empty", true);
                 parent.SignalLogicError();
                 return;
             }
 
-            // Create the HTTP request using the GET method and the required content
-            var payload = new NameValueCollection();
-            payload.Add("authorization-provider", parent.authCache.provider);
-            payload.Add("x-api-key", parent.AppId.Value);
-            payload.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
-            HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.authUrl);
+            // Create the HTTP request using the GET method and the required headers
+            HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.mowersUrl);
             httpRequest.Method = "GET";
-            httpRequest.ContentType = "";
-            httpRequest.Headers.Add(payload);
+            httpRequest.Headers.Add("authorization-provider", parent.authCache.provider);
+            httpRequest.Headers.Add("x-api-key", parent.AppId.Value);
+            httpRequest.Headers.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
             parent.mutex.ReleaseMutex();
-
-            // Now write our request into the world ...
-            /*var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
-            streamOut.Write(String.Empty);
-            streamOut.Close();*/
 
             // Prepare for the response
             try {
@@ -210,9 +228,10 @@ namespace teclab_at.logic.collection {
                 var streamReader = new StreamReader(streamIn, Encoding.UTF8);
                 String data = streamReader.ReadToEnd();
                 parent.Log(data);
-                // Fill the authentication cache
-                //this.authCache = JsonConvert.DeserializeObject<AuthCache>(data);
-                //this.authCache.time = DateTime.UtcNow;
+                // Parse the JSON string into the authentication cache
+                parent.mutex.WaitOne();
+                parent.mowersCache = JsonConvert.DeserializeObject<MowersCache>(data);
+                parent.mutex.ReleaseMutex();
                 // Cleanup
                 streamReader.Close();
                 streamIn.Close();
@@ -224,145 +243,117 @@ namespace teclab_at.logic.collection {
                 String data = streamReader.ReadToEnd();
                 parent.Log(data);
                 parent.SignalLogicError();
-                // Clear the authentication cache
-                //this.authCache.refresh_token = null;
-                //this.authCache.access_token = null;
-                //this.authCache.time = DateTime.MinValue;
                 // Cleanup
                 streamReader.Close();
                 streamIn.Close();
                 httpResponse.Close();
-            }
-
-            // Create the request message that lists us all mowers with their ID
-            /*var reqMessage = new HttpRequestMessage(HttpMethod.Get, HusqAutomower.mowersUrl);
-            reqMessage.Headers.Add("authorization-provider", parent.authCache.provider);
-            reqMessage.Headers.Add("x-api-key", parent.AppId.Value);
-            reqMessage.Headers.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
-            parent.mutex.ReleaseMutex();
-
-            // Trace log
-            parent.Log(HusqAutomower.mowersUrl + ": " + reqMessage.ToString());
-
-            
-            // Create the http request message and process it asynchronously
-            HttpClientHandler handler = new HttpClientHandler();
-            var client = new HttpClient(handler);
-            Task<HttpResponseMessage> reqTask = client.SendAsync(reqMessage);
-            reqTask.Wait(10000);
-            Task<String> respTask = reqTask.Result.Content.ReadAsStringAsync();
-            respTask.Wait(10000);
-
-            // Check response status
-            if (reqTask.Result.StatusCode != HttpStatusCode.OK) {
-                parent.Log(respTask.Result, true);
-                parent.SignalLogicError();
                 return;
             }
 
-            var jss = new JavaScriptSerializer();
-            var mowersData = jss.Deserialize<Dictionary<string, dynamic>>(respTask.Result);
-            foreach (var data in mowersData["data"]) {
-                if (data["attributes"]["system"]["name"] == parent.MowerName.Value) {
+            // Loop through all mowers and find the one we are looking for
+            // Then write the outputs and store the mowers ID for commanding
+            for (int i = 0; i < parent.mowersCache.data.Length; i++) { 
+                MowerData data = parent.mowersCache.data[i];
+                if (data.attributes.system.name == parent.MowerName.Value) {
                     parent.mutex.WaitOne();
-                    parent.mowerId = data["id"];
+                    parent.mowerId = data.id;
                     parent.mutex.ReleaseMutex();
-                    parent.BatteryCapacity.Value = (Byte)data["attributes"]["battery"]["batteryPercent"];
-                    switch (data["attributes"]["mower"]["activity"]) {
+                    if (!parent.BatteryCapacity.HasValue || (parent.BatteryCapacity.Value != (Byte)data.attributes.battery.batteryPercent)) { parent.BatteryCapacity.Value = (Byte)data.attributes.battery.batteryPercent; }
+                    switch (data.attributes.mower.activity) {
                         case "MOWING":
-                            if (!parent.ActivityMowing.Value) { parent.ActivityMowing.Value = true; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || !parent.ActivityMowing.Value) { parent.ActivityMowing.Value = true; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                         case "GOING_HOME":
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (!parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = true; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || !parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = true; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                         case "CHARGING":
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (!parent.ActivityCharging.Value) { parent.ActivityCharging.Value = true; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || !parent.ActivityCharging.Value) { parent.ActivityCharging.Value = true; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                         case "LEAVING":
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (!parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = true; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || !parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = true; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                         case "PARKED_IN_CS":
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (!parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = true; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || !parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = true; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                         case "STOPPED_IN_GARDEN":
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (!parent.ActivityStopped.Value) { parent.ActivityStopped.Value = true; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || !parent.ActivityStopped.Value) { parent.ActivityStopped.Value = true; }
                             break;
                         default:
-                            if (parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                            if (parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                            if (parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                            if (parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                            if (parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                            if (parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                            if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
+                            if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
+                            if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
+                            if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
+                            if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
+                            if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
                             break;
                     }
-                    switch (data["attributes"]["mower"]["state"]) {
+                    switch (data.attributes.mower.state) {
                         case "IN_OPERATION":
-                            if (!parent.StateOperational.Value) { parent.StateOperational.Value = true; }
-                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            if (!parent.StateOperational.HasValue || !parent.StateOperational.Value) { parent.StateOperational.Value = true; }
+                            if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
                             break;
                         case "PAUSED":
-                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                            if (!parent.StatePaused.Value) { parent.StatePaused.Value = true; }
-                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (!parent.StatePaused.HasValue || !parent.StatePaused.Value) { parent.StatePaused.Value = true; }
+                            if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
                             break;
                         case "RESTRICTED":
-                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                            if (!parent.StateRestricted.Value) { parent.StateRestricted.Value = true; }
-                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (!parent.StateRestricted.HasValue || !parent.StateRestricted.Value) { parent.StateRestricted.Value = true; }
+                            if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
                             break;
                         case "ERROR":
                         case "FATAL_ERROR":
                         case "ERROR_AT_POWER_UP":
-                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                            if (!parent.StateError.Value) { parent.StateError.Value = true; }
+                            if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (!parent.StateError.HasValue || !parent.StateError.Value) { parent.StateError.Value = true; }
                             break;
                         default:
-                            if (parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                            if (parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                            if (parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                            if (parent.StateError.Value) { parent.StateError.Value = false; }
+                            if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
+                            if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
+                            if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
+                            if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
                             break;
                     }
+                    break;
                 }
-                break;
-            }*/
+            }
         }
 
         private Boolean AuthorizeRequest(NameValueCollection payload) {
@@ -387,7 +378,7 @@ namespace teclab_at.logic.collection {
                 var streamReader = new StreamReader(streamIn, Encoding.UTF8);
                 String data = streamReader.ReadToEnd();
                 this.Log(data);
-                // Fill the authentication cache
+                // Parse the JSON string into the authentication cache
                 this.authCache = JsonConvert.DeserializeObject<AuthCache>(data);
                 this.authCache.time = DateTime.UtcNow;
                 // Cleanup
@@ -402,8 +393,8 @@ namespace teclab_at.logic.collection {
                 String data = streamReader.ReadToEnd();
                 this.Log(data);
                 // Clear the authentication cache
-                this.authCache.refresh_token = null;
-                this.authCache.access_token = null;
+                this.authCache.refresh_token = String.Empty;
+                this.authCache.access_token = String.Empty;
                 this.authCache.time = DateTime.MinValue;
                 // Cleanup
                 streamReader.Close();
@@ -430,7 +421,7 @@ namespace teclab_at.logic.collection {
             /* The first authorisation is the password grant.
              * If this fails, there must be something wrong in the app ID, user or password.
              * Nothing else we can do ... */
-            if ((this.authCache.access_token == null) || (this.authCache.refresh_token == null)) {
+            if ((this.authCache.access_token == String.Empty) || (this.authCache.refresh_token == String.Empty)) {
                 this.Log("Performing password authorisation ...");
                 payload.Add("grant_type", "password");
                 payload.Add("username", this.AuthUser.Value);
@@ -449,7 +440,7 @@ namespace teclab_at.logic.collection {
             /* The second authorisation trys through the refresh token.
              * Though the refresh token might be invalid or timed out.
              * In that case we need to use password authentication again. */
-            if (this.authCache.refresh_token != null) {
+            if (this.authCache.refresh_token != String.Empty) {
                 this.Log("Performing refresh-token authorisation ...");
                 payload.Add("grant_type", "refresh_token");
                 payload.Add("refresh_token", this.authCache.refresh_token);

@@ -216,6 +216,8 @@ namespace teclab_at.logic.collection {
             // Create the HTTP request using the GET method and the required headers
             HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.mowersUrl);
             httpRequest.Method = "GET";
+            httpRequest.ContentType = "application/vnd.api+json";
+
             httpRequest.Headers.Add("authorization-provider", parent.authCache.provider);
             httpRequest.Headers.Add("x-api-key", parent.AppId.Value);
             httpRequest.Headers.Add("authorization", parent.authCache.token_type + " " + parent.authCache.access_token);
@@ -366,13 +368,14 @@ namespace teclab_at.logic.collection {
             httpRequest.Method = "POST";
             httpRequest.ContentType = "application/x-www-form-urlencoded; charset=utf-8";
 
-            // Now write our request into the world ...
-            var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
-            streamOut.Write(httpData);
-            streamOut.Close();
-
+            // Now write our request into the world and ...
             // Prepare for the response
             try {
+                // Request
+                var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
+                streamOut.Write(httpData);
+                streamOut.Close();
+                // Response
                 HttpWebResponse httpResponse = (HttpWebResponse)httpRequest.GetResponse();
                 Stream streamIn = httpResponse.GetResponseStream();
                 var streamReader = new StreamReader(streamIn, Encoding.UTF8);

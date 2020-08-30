@@ -7,7 +7,7 @@
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.1.151",
+  "Version": "1.1.153",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",

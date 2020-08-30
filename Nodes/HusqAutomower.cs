@@ -363,26 +363,30 @@ namespace teclab_at.logic.collection {
             String httpData = this.ToKeyValuePairs(payload);
             this.Log(HusqAutomower.authUrl + "?" + httpData);
 
-            // Create the HTTP request using the POST method and the required content
-            HttpWebRequest httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.authUrl);
-            httpRequest.Method = "POST";
-            httpRequest.ContentType = "application/x-www-form-urlencoded; charset=utf-8";
-
             // Now write our request into the world and ...
             // Prepare for the response
+            HttpWebRequest httpRequest;
             try {
+                // Create the HTTP request using the POST method and the required content
+                httpRequest = (HttpWebRequest)HttpWebRequest.Create(HusqAutomower.authUrl);
+                this.Log("A");
+                httpRequest.Method = "POST";
+                httpRequest.ContentType = "application/x-www-form-urlencoded; charset=utf-8";
                 // Request
                 var streamOut = new StreamWriter(httpRequest.GetRequestStream(), Encoding.UTF8);
+                this.Log("B");
                 streamOut.Write(httpData);
                 streamOut.Close();
                 // Response
                 HttpWebResponse httpResponse = (HttpWebResponse)httpRequest.GetResponse();
+                this.Log("C");
                 Stream streamIn = httpResponse.GetResponseStream();
                 var streamReader = new StreamReader(streamIn, Encoding.UTF8);
                 String data = streamReader.ReadToEnd();
                 this.Log(data);
                 // Parse the JSON string into the authentication cache
                 this.authCache = JsonConvert.DeserializeObject<AuthCache>(data);
+                this.Log("D");
                 this.authCache.time = DateTime.UtcNow;
                 // Cleanup
                 streamReader.Close();

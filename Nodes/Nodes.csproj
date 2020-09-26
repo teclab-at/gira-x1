@@ -52,6 +52,7 @@
   <ItemGroup>
     <Compile Include="HusqAutomower.cs" />
     <Compile Include="SendMail.cs" />
+    <Compile Include="TelegramMsg.cs" />
     <Compile Include="TempController.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

@@ -7,7 +7,7 @@
   "DependentFiles": [
     "LogicModule.Nodes.Helpers.dll"
   ],
-  "Version": "1.1.153",
+  "Version": "1.2.1",
   "Author": "Thomas Perschak", 
   "Copyright": "TecLab.at",
   "DeveloperId": "teclab_at",
@@ -50,6 +50,19 @@
       "DefaultIcon": "icons/GenericLogicNode.png",
       "HelpTooltip": {
         "en": "Control and status of Husqvarner Automower."
+      },
+      "HelpFileReference": null
+    },
+    {
+      "Type": "teclab_at.logic.collection.TelegramMsg",
+      "Name": {
+        "en": "TecLab: Telegram Message"
+      },
+      "IsConverter": false,
+      "Category": "Node",
+      "DefaultIcon": "icons/GenericLogicNode.png",
+      "HelpTooltip": {
+        "en": "Send text messages to Telegram messenger."
       },
       "HelpFileReference": null
     }

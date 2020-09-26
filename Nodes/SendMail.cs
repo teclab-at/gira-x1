@@ -135,12 +135,12 @@ namespace teclab_at.logic.collection {
             int tryNr = 1;
             while (sendRetries > 1) {
                 try {
-                    parent.Log("SendMessage (try " + tryNr.ToString() + "): " + message.Subject);
+                    parent.Log("SendMessage (try " + tryNr.ToString() + ") ...");
                     client.Send(message);
                     sendSuccess = true;
                     break;
                 } catch (Exception ex) {
-                    parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + message.Subject + " -> " + ex.Message);
+                    parent.Log("SendMessage (try " + tryNr.ToString() + ") failed:" + ex.ToString(), true);
                     // Sleep for 50 seconds. Note that the client.Send timeout is set to 10 seconds which gives us a one minute cycle
                     Thread.Sleep(50000);
                 }
@@ -158,11 +158,11 @@ namespace teclab_at.logic.collection {
 
             // Final try
             try {
-                parent.Log("SendMessage (try " + tryNr.ToString() + "): " + message.Subject);
+                parent.Log("SendMessage (try " + tryNr.ToString() + ") ...");
                 client.Send(message);
                 parent.Log("SendMessage (try " + tryNr.ToString() + ") success");
             } catch (Exception ex) {
-                parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + message.Subject + " -> " + ex.Message, true);
+                parent.Log("SendMessage (try " + tryNr.ToString() + ") failed: " + ex.ToString(), true);
                 parent.SignalLogicError();
             } finally {
                 client.Dispose();

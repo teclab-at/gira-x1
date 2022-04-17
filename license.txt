@@ -1,5 +1,5 @@
 Logic nodes for the GIRA X1
-Copyright (C) 2020  TecLab Thomas Perschak
+Copyright (C) 2022  TecLab Thomas Perschak
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

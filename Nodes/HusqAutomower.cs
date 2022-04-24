@@ -117,7 +117,7 @@ namespace teclab_at.logic.collection {
         }
 
         public void SignalLogicError(Boolean state = true) {
-            if (!this.LogicError.HasValue || (this.LogicError.Value != state)) { this.LogicError.Value = state; }
+            this.LogicError.Value = state;
         }
 
         public override void Startup() {
@@ -315,98 +315,98 @@ namespace teclab_at.logic.collection {
                 if (data.attributes.system.name != parent.MowerName.Value) continue;
                 foundMower = true;
                 parent.mowerId = data.id;
-                if (!parent.BatteryCapacity.HasValue || (parent.BatteryCapacity.Value != (Byte)data.attributes.battery.batteryPercent)) { parent.BatteryCapacity.Value = (Byte)data.attributes.battery.batteryPercent; }
+                parent.BatteryCapacity.Value = (Byte)data.attributes.battery.batteryPercent;
                 switch (data.attributes.mower.activity) {
                     case "MOWING":
-                        if (!parent.ActivityMowing.HasValue || !parent.ActivityMowing.Value) { parent.ActivityMowing.Value = true; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = true;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = false;
                         break;
                     case "GOING_HOME":
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || !parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = true; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = true;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = false;
                         break;
                     case "CHARGING":
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || !parent.ActivityCharging.Value) { parent.ActivityCharging.Value = true; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = true;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = false;
                         break;
                     case "LEAVING":
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || !parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = true; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = true;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = false;
                         break;
                     case "PARKED_IN_CS":
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || !parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = true; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = true;
+                        parent.ActivityStopped.Value = false;
                         break;
                     case "NOT_APPLICABLE":
                     case "STOPPED_IN_GARDEN":
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || !parent.ActivityStopped.Value) { parent.ActivityStopped.Value = true; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = true;
                         break;
                     default:
-                        if (!parent.ActivityMowing.HasValue || parent.ActivityMowing.Value) { parent.ActivityMowing.Value = false; }
-                        if (!parent.ActivityGoingHome.HasValue || parent.ActivityGoingHome.Value) { parent.ActivityGoingHome.Value = false; }
-                        if (!parent.ActivityCharging.HasValue || parent.ActivityCharging.Value) { parent.ActivityCharging.Value = false; }
-                        if (!parent.ActivityLeavingCS.HasValue || parent.ActivityLeavingCS.Value) { parent.ActivityLeavingCS.Value = false; }
-                        if (!parent.ActivityParkingCS.HasValue || parent.ActivityParkingCS.Value) { parent.ActivityParkingCS.Value = false; }
-                        if (!parent.ActivityStopped.HasValue || parent.ActivityStopped.Value) { parent.ActivityStopped.Value = false; }
+                        parent.ActivityMowing.Value = false;
+                        parent.ActivityGoingHome.Value = false;
+                        parent.ActivityCharging.Value = false;
+                        parent.ActivityLeavingCS.Value = false;
+                        parent.ActivityParkingCS.Value = false;
+                        parent.ActivityStopped.Value = false;
                         break;
                 }
                 switch (data.attributes.mower.state) {
                     case "IN_OPERATION":
-                        if (!parent.StateOperational.HasValue || !parent.StateOperational.Value) { parent.StateOperational.Value = true; }
-                        if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                        if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                        if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
+                        parent.StateOperational.Value = true;
+                        parent.StatePaused.Value = false;
+                        parent.StateRestricted.Value = false;
+                        parent.StateError.Value = false;
                         break;
                     case "PAUSED":
-                        if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                        if (!parent.StatePaused.HasValue || !parent.StatePaused.Value) { parent.StatePaused.Value = true; }
-                        if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                        if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
+                        parent.StateOperational.Value = false;
+                        parent.StatePaused.Value = true;
+                        parent.StateRestricted.Value = false;
+                        parent.StateError.Value = false;
                         break;
                     case "RESTRICTED":
-                        if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                        if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                        if (!parent.StateRestricted.HasValue || !parent.StateRestricted.Value) { parent.StateRestricted.Value = true; }
-                        if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
+                        parent.StateOperational.Value = false;
+                        parent.StatePaused.Value = false;
+                        parent.StateRestricted.Value = true;
+                        parent.StateError.Value = false;
                         break;
                     case "ERROR":
                     case "FATAL_ERROR":
                     case "ERROR_AT_POWER_UP":
-                        if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                        if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                        if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                        if (!parent.StateError.HasValue || !parent.StateError.Value) { parent.StateError.Value = true; }
+                        parent.StateOperational.Value = false;
+                        parent.StatePaused.Value = false;
+                        parent.StateRestricted.Value = false; 
+                        parent.StateError.Value = true;
                         break;
                     default:
-                        if (!parent.StateOperational.HasValue || parent.StateOperational.Value) { parent.StateOperational.Value = false; }
-                        if (!parent.StatePaused.HasValue || parent.StatePaused.Value) { parent.StatePaused.Value = false; }
-                        if (!parent.StateRestricted.HasValue || parent.StateRestricted.Value) { parent.StateRestricted.Value = false; }
-                        if (!parent.StateError.HasValue || parent.StateError.Value) { parent.StateError.Value = false; }
+                        parent.StateOperational.Value = false;
+                        parent.StatePaused.Value = false;
+                        parent.StateRestricted.Value = false;
+                        parent.StateError.Value = false;
                         break;
                 }
                 foundMower = true;
